@@ -1,0 +1,38 @@
+name: Live Relay Video + Audio Custom
+
+on:
+  workflow_dispatch:
+    inputs:
+      m3u8_url:
+        description: '1. Link .m3u8 (Video)'
+        required: true
+      audio_url:
+        description: '2. Link MP3/Audio (Kosongkan jika ingin audio asli m3u8)'
+        required: false
+      kunci_rtmp:
+        description: '3. Stream Key YouTube'
+        required: true
+
+jobs:
+  streaming:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install FFmpeg
+        run: sudo apt update && sudo apt install ffmpeg -y
+
+      - name: Jalankan Live
+        run: |
+          # Logika: Jika link audio diisi, gunakan audio luar. Jika tidak, gunakan audio m3u8.
+          if [ -z "${{ github.event.inputs.audio_url }}" ]; then
+            # Pakai Audio Asli m3u8 tapi di-convert ke AAC (Standar YT)
+            ffmpeg -re -i "${{ github.event.inputs.m3u8_url }}" \
+            -c:v libx264 -preset veryfast -b:v 2500k \
+            -c:a aac -ar 44100 -b:a 128k -f flv \
+            "rtmp://a.rtmp.youtube.com/live2/${{ github.event.inputs.kunci_rtmp }}"
+          else
+            # GABUNGKAN: Video dari m3u8 + Audio dari Link MP3
+            ffmpeg -re -i "${{ github.event.inputs.m3u8_url }}" -re -i "${{ github.event.inputs.audio_url }}" \
+            -c:v libx264 -preset veryfast -b:v 2500k \
+            -c:a aac -ar 44100 -b:a 128k -map 0:v:0 -map 1:a:0 -shortest -f flv \
+            "rtmp://a.rtmp.youtube.com/live2/${{ github.event.inputs.kunci_rtmp }}"
+          fi
