@@ -1,4 +1,4 @@
-name: Live Relay Video + Audio Custom
+name: Live Relay Video + Audio Custom (With Cookies)
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ on:
         description: '1. Link .m3u8 (Video)'
         required: true
       audio_url:
-        description: '2. Link MP3/Audio (Kosongkan jika ingin audio asli m3u8)'
+        description: '2. Link YouTube/MP3 (Kosongkan untuk audio asli)'
         required: false
       kunci_rtmp:
         description: '3. Stream Key YouTube'
@@ -17,22 +17,34 @@ jobs:
   streaming:
     runs-on: ubuntu-latest
     steps:
-      - name: Install FFmpeg
-        run: sudo apt update && sudo apt install ffmpeg -y
-
-      - name: Jalankan Live
+      - name: Install Tools (FFmpeg & yt-dlp)
         run: |
-          # Logika: Jika link audio diisi, gunakan audio luar. Jika tidak, gunakan audio m3u8.
+          sudo apt update && sudo apt install ffmpeg -y
+          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo chmod a+rx /usr/local/bin/yt-dlp
+
+      - name: Prepare Cookies
+        run: |
+          echo "${{ secrets.YT_COOKIES }}" > cookies.txt
+
+      - name: Jalankan Live Streaming
+        run: |
+          # Cek apakah audio_url diisi
           if [ -z "${{ github.event.inputs.audio_url }}" ]; then
-            # Pakai Audio Asli m3u8 tapi di-convert ke AAC (Standar YT)
+            echo "Menggunakan audio asli dari m3u8..."
             ffmpeg -re -i "${{ github.event.inputs.m3u8_url }}" \
-            -c:v libx264 -preset veryfast -b:v 2500k \
-            -c:a aac -ar 44100 -b:a 128k -f flv \
-            "rtmp://a.rtmp.youtube.com/live2/${{ github.event.inputs.kunci_rtmp }}"
+              -c:v libx264 -preset veryfast -b:v 2500k \
+              -c:a aac -ar 44100 -b:a 128k -f flv \
+              "rtmp://a.rtmp.youtube.com/live2/${{ github.event.inputs.kunci_rtmp }}"
           else
-            # GABUNGKAN: Video dari m3u8 + Audio dari Link MP3
-            ffmpeg -re -i "${{ github.event.inputs.m3u8_url }}" -re -i "${{ github.event.inputs.audio_url }}" \
-            -c:v libx264 -preset veryfast -b:v 2500k \
-            -c:a aac -ar 44100 -b:a 128k -map 0:v:0 -map 1:a:0 -shortest -f flv \
-            "rtmp://a.rtmp.youtube.com/live2/${{ github.event.inputs.kunci_rtmp }}"
+            echo "Mengambil stream audio dari YouTube/Link luar..."
+            # yt-dlp mengambil link stream audio mentah menggunakan cookies
+            AUDIO_STREAM=$(yt-dlp --cookies cookies.txt -g -f "bestaudio" "${{ github.event.inputs.audio_url }}")
+            
+            ffmpeg -re -i "${{ github.event.inputs.m3u8_url }}" -re -i "$AUDIO_STREAM" \
+              -c:v libx264 -preset veryfast -b:v 2500k \
+              -c:a aac -ar 44100 -b:a 128k \
+              -map 0:v:0 -map 1:a:0 -shortest -f flv \
+              "rtmp://a.rtmp.youtube.com/live2/${{ github.event.inputs.kunci_rtmp }}"
           fi
+          
