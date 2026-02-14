@@ -1,4 +1,4 @@
-name: Live Relay Video + Audio Custom (With Cookies)
+name: Live Relay Video + Audio Custom (Fixed)
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ on:
         description: '1. Link .m3u8 (Video)'
         required: true
       audio_url:
-        description: '2. Link YouTube/MP3 (Kosongkan untuk audio asli)'
+        description: '2. Link YouTube/MP3'
         required: false
       kunci_rtmp:
         description: '3. Stream Key YouTube'
@@ -17,7 +17,12 @@ jobs:
   streaming:
     runs-on: ubuntu-latest
     steps:
-      - name: Install Tools (FFmpeg & yt-dlp)
+      - name: Install Node.js (Fix JS Challenge)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install FFmpeg & yt-dlp
         run: |
           sudo apt update && sudo apt install ffmpeg -y
           sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
@@ -29,17 +34,18 @@ jobs:
 
       - name: Jalankan Live Streaming
         run: |
-          # Cek apakah audio_url diisi
           if [ -z "${{ github.event.inputs.audio_url }}" ]; then
-            echo "Menggunakan audio asli dari m3u8..."
             ffmpeg -re -i "${{ github.event.inputs.m3u8_url }}" \
               -c:v libx264 -preset veryfast -b:v 2500k \
               -c:a aac -ar 44100 -b:a 128k -f flv \
               "rtmp://a.rtmp.youtube.com/live2/${{ github.event.inputs.kunci_rtmp }}"
           else
-            echo "Mengambil stream audio dari YouTube/Link luar..."
-            # yt-dlp mengambil link stream audio mentah menggunakan cookies
-            AUDIO_STREAM=$(yt-dlp --cookies cookies.txt -g -f "bestaudio" "${{ github.event.inputs.audio_url }}")
+            # MENGGUNAKAN --format-sort untuk memastikan audio terbaik terdeteksi
+            # Dan menambahkan --no-check-certificates jika perlu
+            AUDIO_STREAM=$(yt-dlp --cookies cookies.txt \
+              --format "bestaudio/best" \
+              --get-url \
+              "${{ github.event.inputs.audio_url }}")
             
             ffmpeg -re -i "${{ github.event.inputs.m3u8_url }}" -re -i "$AUDIO_STREAM" \
               -c:v libx264 -preset veryfast -b:v 2500k \
@@ -47,4 +53,3 @@ jobs:
               -map 0:v:0 -map 1:a:0 -shortest -f flv \
               "rtmp://a.rtmp.youtube.com/live2/${{ github.event.inputs.kunci_rtmp }}"
           fi
-          
